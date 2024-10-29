@@ -1,0 +1,130 @@
+---
+title: "Assignment 1"
+author: "Derick Liang"
+date: "2024-09-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(stats)
+library(tidyverse)
+library(viridis)
+library(ggplot2)
+library(rworldmap)
+library(dplyr)
+library(formatR)
+
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 50), tidy = TRUE) #Wraps text if too long 
+
+dfBOLD = read.csv("../data/ass1Data.csv") #Load BOLD dataset
+
+dfAss1 = na.omit(dfBOLD[,c(1,22,30,47,48,55)]) #Filter for specific columns and remove all rows with NA values in specified columns 
+```
+
+# Introduction
+*Pterois*, commonly referred to as lionfish, is a genus of venomous marine fish native to the Eastern Hemisphere. They are easily identified by their distinctive appearance, characterized by long, flowing fins and bold, zebra-like stripes. Lionfish possess venomous spines that provide protection against predators. In recent years, Pterois species have become invasive in parts of the Western Hemisphere. Specifically, *P. miles* are found in the Indian Ocean, while *P. volitans* inhabits the western and south-central Pacific, as well as Western Australia (Schultz, 1986). The introduction of *Pterois* species into the Western Hemisphere is largely attributed to human activity. Two of the most plausible pathways for their introduction are the release of aquarium specimens and the transport of larvae through ballast water from ships (Whitfield, 2002). Their invasion has pose a significant ecological threat by preying on native fish species and disrupting marine ecosystems. As new species like Pterois are introduced to new environments, they often undergo speciation, adapting to their surroundings to improve survivabilty. Their spread into the Western Hemisphere has placed them in unfamiliar ecosystems, which could prompt genetic divergence and eventual speciation to align with the different ecological conditions they encounter. As a result, this analysis aims to investigate how the geographic expansion of lionfish species into non-native regions has influenced population differentiation and whether the current populations exhibit signs of this adaptation.
+
+
+```{r}
+#Count the number of each species
+dfAss1_counts <- dfAss1 %>%
+  group_by(species_name) %>%
+  summarise(count = n())
+
+#Barplot to show species count 
+ggplot(dfAss1_counts, aes(x = reorder(species_name, count), y = count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_text(aes(label = count), hjust = -0.2, size = 3.5) +  # Add count labels
+  coord_flip() + # Flip the bars horizontally
+  theme_minimal() +
+  labs(title = "Species Count",
+       x = "Species Name",
+       y = "Count")
+```
+Figure 1. Bar plot showing different species quantities. 
+
+```{r}
+#General Map plot
+world_map = map_data("world") 
+
+df_cords_count <- dfAss1 %>%
+  select("species_name","lat", "lon", "country") %>%
+  group_by(lon, lat, country) %>%
+  summarise(count = n(), .groups = "drop")  # Count occurrences of each lon/lat pair
+
+#Plot the world map and the data points from your file
+ggplot() + 
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), 
+               fill = "white", color = "black") +  # Generate world map
+  geom_point(data = df_cords_count, aes(x = lon, y = lat, color = count), 
+             size = 2, alpha = 0.8) +  # Plot points with color based on count
+  scale_color_gradient(low = "yellow", high = "red") +  # Color gradient based on count
+  labs(title = "Location of Species' Data Extraction",
+       x = "Longitude", y = "Latitude", color = "Count")  # Label axes and legend
+```
+Figure 2. Geographical map showing the locations of species data extraction. The color gradient represents the count of extractions, with red indicating higher counts and yellow indicating lower counts. 
+
+```{r}
+#Differentiate between Eastern and Western Hemisphere
+df_species_diff = dfAss1 %>%
+  select(species_name, lat, lon, country) %>%
+  mutate(hemisphere = ifelse(lon > 0, "Eastern Hemisphere", "Western Hemisphere")) %>% 
+  count(species_name, hemisphere, sort = TRUE) 
+
+#Plot species diversity in a stacked bar
+ggplot(df_species_diff, aes(x = hemisphere, y = n, fill = species_name)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Species Count by Hemisphere",
+       x = "Hemispheres",
+       y = "Counts")
+```
+Figure 3. Stacked bar chart comparing species diversity of Pterois between the Eastern and Western Hemispheres.
+
+
+# Results
+The original dataset from BOLD contains 814 observations. Through subsetting the dataset and removing any rows in the subset containing NA values, 447 observations remained for analysis. Figure 1 shows that *P. miles* and *P. volitans* have the highest species counts, with 259 and 97 individuals, respectively, comprising approximately 80% of the dataset. *P. antennata* and *P. russelii* are the third and fourth highest count but total only 15% of the dataset. To better see the distribution of the lionfish, a geographical figure was made using longtitude and latitude data of where the samples were caught. In figure 2, we observe that in the Eastern Hemisphere, the fish are widely distributed, while in the Western Hemisphere, they are primarily concentrated near the Atlantic Ocean, with the highest counts found in waters around Puerto Rico. To gain a deeper understanding of lionfish diversity, a comparison species distribution between the Western and Eastern Hemispheres was conducted. Figure 3 shows that the Eastern Hemisphere has greater lionfish species diversity, with a broader spread of species types compared to the Western Hemisphere. In the Western Hemisphere, *P. volitans* is the major species type with very few other species present. Notably, *P. miles*, the second most abundant species in the dataset, is rarely found in the Western Hemisphere.
+
+
+# Discussion
+Through this analysis, it is evident that speciation of *Petoris* did not occur as the fish who where located near the Atlantic ocean were of species *P.volitans*.  The orignal group that was brought to the Atlanic ocean consisted of mainly *P.volitans* (93%) and *P.miles* (7%) (Hamner et al, 2007). In the analysis, it is confirmed that the majority of lionfish in the Atlantic Ocean are *P. volitans*, aligning with previous findings. This is surprising, as one might expect new species to adapt or undergo speciation to better fit their new environment. However, *P. volitans* does not face significant environmental pressures to adapt, primarily because it lacks natural predators in the Atlantic (Norton and Norton, 2020). It is possible that the absence of predation has allowed *P. volitans* to thrive without undergoing major adaptations. Without natural predation, their presence causes disruptions of local food chains and endangers the native biodiversity. 
+
+Future studies can include larger datasets with samples collected from different bodies of water. It is possible that the data was skewed due to higher collection rate in the Atlantic ocean as lionfish is highly studied in that region. Furthermore, the count of *P.miles* was significantly reduced because it lacked data in certain sections for analysis. Submission of datasets should be standardized so only those with complete or sufficient data can be uploaded to BOLD, reducing samples removed during analysis. 
+
+
+# Acknowledgements 
+I would like to thank Karl Cottenie for providing example code to assists in developing my analysis. 
+
+I would like to thank Frances for clarifying what the sequence data meant in the BOLD file. 
+
+I would like to thank Vivian Phung for providing me with ideas. 
+
+I would like to thank Rebecca Choi for clarifying assignment requirement clarification.
+
+I would like thank the developers of ChatGPT who provided the software for code debugging and clarification. 
+
+
+# References 
+Albins MA, Hixon MA (2013) Worst case scenario: potential long-term effects of invasive predatory lionfish (Pterois volitans) on Atlantic and Caribbean coral-reef communities. Environmental Biology of Fishes 96(10-11): 1151–1157. doi:10.1007/s10641-011-9795-1
+
+Freshwater DW, Hines A, Parham S, Wilbur A, Sabaoun M, Woodhead J, Akins L, Purdy B, Whitfield PE, Paris CB (2009) Mitochondrial control region sequence analyses indicate dispersal from the Indo-Pacific to the western Atlantic in the lionfish, Pterois volitans. Journal of Fish Biology 74(5): 1213–1217. doi:10.1111/j.1095-8649.2009.02157.x
+
+Schultz ET (1986) Pterois volitans and Pterois miles: two
+valid species. Copeia 3: 686-690 doi:10.2307/1444950
+
+Whitfield PE, Gardner T, Vives SP, Gilligan MR, Courtenay WR, Ray GC, Hare JA (2002) Biological invasion of the Indo-Pacific lionfish Pterois volitans along the Atlantic coast of North America. Marine Ecology Progress Series 235: 289–297. doi:10.3354/meps235289
+https://www.researchgate.net/publication/242670509_Biological_invasion_of_the_Indo-Pacific_lionfish_Pterois_volitans_along_the_Atlantic_coast_of_North_America
+
+
+
+
+
+
+
+
+
+
+
+
