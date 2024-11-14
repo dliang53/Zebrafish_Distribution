@@ -15,26 +15,61 @@ library(ggplot2)
 library(rworldmap)
 library(dplyr)
 library(formatR)
+library(gganimate)
+library(gifski)
 
 knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 50), tidy = TRUE) #Wraps text if too long 
 
-dfBOLD = read.csv("../data/ass1Data.csv") #Load BOLD dataset
+# To Load BOLD data using BOLD API (alternate option is to use saved TSV data file)
+# BOLDdata <- read_tsv(file = "http://www.boldsystems.org/index.php/API_Public/specimen?taxon=Bombus&geo=Canada,United%20States&format=tsv")
 
-dfAss1 = na.omit(dfBOLD[,c(1,22,30,47,48,55)]) #Filter for specific columns and remove all rows with NA values in specified columns 
+dfBOLD = read.csv("ass1Data.csv") #Load saved TSV BOLD dataset
+
+# Filtering BOLD data
+df_lionfish = na.omit(dfBOLD[,c(1,22,47,48,55)]) #Filter for specific columns and remove all rows with NA values in specified columns 
+
+# Check if all NAs have been removed - FALSE is returned! 
+any(is.na(df_lionfish))
+
 ```
 
 # Introduction
 *Pterois*, commonly referred to as lionfish, is a genus of venomous marine fish native to the Eastern Hemisphere. They are easily identified by their distinctive appearance, characterized by long, flowing fins and bold, zebra-like stripes. Lionfish possess venomous spines that provide protection against predators. In recent years, Pterois species have become invasive in parts of the Western Hemisphere. Specifically, *P. miles* are found in the Indian Ocean, while *P. volitans* inhabits the western and south-central Pacific, as well as Western Australia (Schultz, 1986). The introduction of *Pterois* species into the Western Hemisphere is largely attributed to human activity. Two of the most plausible pathways for their introduction are the release of aquarium specimens and the transport of larvae through ballast water from ships (Whitfield, 2002). Their invasion has pose a significant ecological threat by preying on native fish species and disrupting marine ecosystems. As new species like Pterois are introduced to new environments, they often undergo speciation, adapting to their surroundings to improve survivabilty. Their spread into the Western Hemisphere has placed them in unfamiliar ecosystems, which could prompt genetic divergence and eventual speciation to align with the different ecological conditions they encounter. As a result, this analysis aims to investigate how the geographic expansion of lionfish species into non-native regions has influenced population differentiation and whether the current populations exhibit signs of this adaptation.
 
-
 ```{r}
-#Count the number of each species
-dfAss1_counts <- dfAss1 %>%
+
+# Conduct EDA on filtered BOLD dataset
+
+# Function that plots boxplot, histogram and summary statistics for numerical variables 
+plot_and_summarize_variable <- function(df, var, title) {
+  # Summary of the specified numerical variable
+  cat("Summary of", title, ":\n")
+  print(summary(df[[var]]))
+  
+  # Create a boxplot for the specified variable
+  boxplot(df[[var]], main = paste(title, "Boxplot"), ylab = title)
+  
+  # Plot histogram for the specified variable
+  hist_plot <- ggplot(df, aes_string(x = var)) +
+    geom_histogram(fill = "skyblue", color = "black", bins = 30) +
+    theme_minimal() +
+    labs(title = paste(title, "Distribution"), x = title, y = "Frequency")
+  
+  # Print the histogram
+  print(hist_plot)
+}
+
+# Apply function to numerical variables
+plot_and_summarize_variable(df_lionfish, "lat", "Latitude")
+plot_and_summarize_variable(df_lionfish, "lon", "Longitude")
+
+# Count the number of each species
+df_lionfish_counts <- df_lionfish %>%
   group_by(species_name) %>%
   summarise(count = n())
 
-#Barplot to show species count 
-ggplot(dfAss1_counts, aes(x = reorder(species_name, count), y = count)) +
+# Species count distribution
+ggplot(df_lionfish_counts, aes(x = reorder(species_name, count), y = count)) +
   geom_bar(stat = "identity", fill = "skyblue") +
   geom_text(aes(label = count), hjust = -0.2, size = 3.5) +  # Add count labels
   coord_flip() + # Flip the bars horizontally
@@ -42,38 +77,129 @@ ggplot(dfAss1_counts, aes(x = reorder(species_name, count), y = count)) +
   labs(title = "Species Count",
        x = "Species Name",
        y = "Count")
+
 ```
-Figure 1. Bar plot showing different species quantities. 
-
 ```{r}
-#General Map plot
-world_map = map_data("world") 
 
-df_cords_count <- dfAss1 %>%
-  select("species_name","lat", "lon", "country") %>%
-  group_by(lon, lat, country) %>%
-  summarise(count = n(), .groups = "drop")  # Count occurrences of each lon/lat pair
+# Extract year from last 2 digits of processid (Assuming that the year was when the specimen was found)
+year <- str_extract(df_lionfish$processid, "\\d{2}$")
+df_lionfish$year <- year
+df_lionfish$year <- (paste0("20", df_lionfish$year))  # Ensures that year is in correct format
 
-#Plot the world map and the data points from your file
-ggplot() + 
+# Convert `year` to numeric for implementation
+df_lionfish <- df_lionfish %>%
+  mutate(year = as.numeric(year))
+
+# Group and summarize data by year, longitude, and latitude
+df_cords_count <- df_lionfish %>%
+  select("species_name", "lat", "lon", "country", "year") %>%
+  group_by(year, lon, lat, country) %>%
+  summarise(count = n(), .groups = "drop")  # Count occurrences of each lon/lat pair per year
+
+# General Map plot with animated time-lapse for lionfish spread over the years
+world_map <- map_data("world")
+
+map_animation <- ggplot() + 
+  # Plot the world map
   geom_polygon(data = world_map, aes(x = long, y = lat, group = group), 
-               fill = "white", color = "black") +  # Generate world map
+               fill = "white", color = "black") +
+  # Plot points with color gradient based on count, animated by year
   geom_point(data = df_cords_count, aes(x = lon, y = lat, color = count), 
-             size = 2, alpha = 0.8) +  # Plot points with color based on count
-  scale_color_gradient(low = "yellow", high = "red") +  # Color gradient based on count
-  labs(title = "Location of Species' Data Extraction",
-       x = "Longitude", y = "Latitude", color = "Count")  # Label axes and legend
+             size = 3, alpha = 0.8) +
+  scale_color_gradient(low = "yellow", high = "red") +
+  labs(title = 'Lionfish Spread Over Time: Year {frame_time}', 
+       x = "Longitude", y = "Latitude", color = "Count") +
+  theme_minimal() +
+  # Animate over time using the 'year' column
+  transition_time(as.numeric(year)) +
+  ease_aes('linear')  # Smooth transition between frames
+
+# Directly render and save the animation
+# Saved gif in folder 
+animate(
+  map_animation, 
+  renderer = gifski_renderer("lionfish_expansion.gif"),  # Specify output file name
+  duration = 20,
+  fps = 10
+)
+
+# Render animation as an MP4 video
+# Saved video file is saved in folder
+animate(map_animation, renderer = av_renderer("lionfish_expansion.mp4"), duration = 20, fps = 10)
 ```
-Figure 2. Geographical map showing the locations of species data extraction. The color gradient represents the count of extractions, with red indicating higher counts and yellow indicating lower counts. 
+Figure 1. Geographical map time lapse showing the locations of species data extraction over the years of 2004-2023. The color gradient represents the count of extractions, with red indicating higher counts and yellow indicating lower counts. 
 
 ```{r}
-#Differentiate between Eastern and Western Hemisphere
-df_species_diff = dfAss1 %>%
+
+df_corr <- df_lionfish %>%
+  arrange(country, year) %>%
+  group_by(country) %>%
+  mutate(lat_change = lat - lag(lat),
+         lon_change = lon - lag(lon)) %>%
+  filter(!is.na(lat_change) & !is.na(lon_change))
+
+# Calculate correlation by country
+correlation_results <- df_corr %>%
+  group_by(country) %>%
+  summarize(correlation = cor(lat_change, lon_change, use = "complete.obs"))
+
+print(correlation_results)
+
+# Define the function
+summarize_and_plot_movement <- function(data) {
+  # Check data format
+  if(!all(c("year", "country", "lat_change", "lon_change") %in% colnames(data))) {
+    stop("Data should contain 'year', 'country', 'lat_change', and 'lon_change' columns.")
+  }
+  
+  # Summarize the data: calculate mean lat/lon change per year per country
+  summary_data <- df_corr %>%
+    group_by(country, year) %>%
+    summarize(
+      mean_lat_change = mean(lat_change, na.rm = TRUE),
+      mean_lon_change = mean(lon_change, na.rm = TRUE)
+    ) %>%
+    ungroup()
+  
+  # Plot latitude and longitude changes over time for each country
+  lat_plot <- ggplot(summary_data, aes(x = year, y = mean_lat_change, color = country, group = country)) +
+    geom_line() +
+    geom_point() +
+    labs(title = "Average Latitude Change Over Time by Country",
+         x = "Year",
+         y = "Mean Latitude Change") +
+    theme_minimal() +
+    theme(legend.position = "none") +
+    facet_wrap(~ country, scales = "free_y")
+
+  lon_plot <- ggplot(summary_data, aes(x = year, y = mean_lon_change, color = country, group = country)) +
+    geom_line() +
+    geom_point() +
+    labs(title = "Average Longitude Change Over Time by Country",
+         x = "Year",
+         y = "Mean Longitude Change") +
+    theme_minimal() +
+    theme(legend.position = "none") +
+    facet_wrap(~ country, scales = "free_y")
+
+  # Print the plots
+  print(lat_plot)
+  print(lon_plot)
+}
+
+summarize_and_plot_movement(df_corr)
+
+```
+Figure 2a, 2b. Average (Mean) Latitude and Longitude Change Over Time by Country for Pterois Populations.
+
+```{r}
+# Differentiate between Eastern and Western Hemisphere
+df_species_diff = df_lionfish %>%
   select(species_name, lat, lon, country) %>%
   mutate(hemisphere = ifelse(lon > 0, "Eastern Hemisphere", "Western Hemisphere")) %>% 
   count(species_name, hemisphere, sort = TRUE) 
 
-#Plot species diversity in a stacked bar
+# Plot species diversity in a stacked bar
 ggplot(df_species_diff, aes(x = hemisphere, y = n, fill = species_name)) +
   geom_bar(stat = "identity") +
   theme_minimal() +
@@ -116,15 +242,3 @@ valid species. Copeia 3: 686-690 doi:10.2307/1444950
 
 Whitfield PE, Gardner T, Vives SP, Gilligan MR, Courtenay WR, Ray GC, Hare JA (2002) Biological invasion of the Indo-Pacific lionfish Pterois volitans along the Atlantic coast of North America. Marine Ecology Progress Series 235: 289–297. doi:10.3354/meps235289
 https://www.researchgate.net/publication/242670509_Biological_invasion_of_the_Indo-Pacific_lionfish_Pterois_volitans_along_the_Atlantic_coast_of_North_America
-
-
-
-
-
-
-
-
-
-
-
-
